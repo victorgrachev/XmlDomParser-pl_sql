@@ -3,19 +3,19 @@ create or replace package ParsingXML_postPackage is
   -- Author  : Grachev V.T
   -- Created : 30.11.2019 14:13:09
   /*
-  РџР°РєРµС‚ СЂР°Р±РѕС‚Р°РµС‚ РЅР° РѕСЃРЅРѕРІРµ DOM РїР°СЂСЃРµСЂР° Oracle
-  РџР°РєРµС‚ РїСЂРµРґРЅР°Р·РЅР°С‡РµРЅ РґР»СЏ СЂР°Р·Р±РѕСЂР° XML С„Р°Р№Р»РѕРІ:
-  -- РџСЂРѕС†РµРґСѓСЂР° Р·Р°РіСЂСѓР·РєРё XML РёР· РІРЅРµС€РЅРµРіРѕ С„Р°Р№Р»Р° - GetClobOutBfile (РРјСЏ С„Р°Р№Р»Р°, РРјСЏ РґРёСЂРµРєС‚РѕСЂРёРё, Clob РІРѕР·РІСЂР°С‰Р°РµРјС‹Р№ РїСЂРѕС†РµРґСѓСЂРѕР№)
-  -- РџСЂРѕС†РµРґСѓСЂР° СЂР°Р·Р±РѕСЂР° CLOB XML С„Р°Р№Р»Р° -  ParsingXml(Clob С„Р°Р№Р» РґР»СЏ СЂР°Р·Р±РѕСЂР°)
-  -- Р РµР·СѓР»СЊС‚РёСЂСѓСЋС‰РёР№ РјР°СЃСЃРёРІ Р·РЅР°С‡РµРЅРёР№ vXMLsPars
+  Пакет работает на основе DOM парсера Oracle
+  Пакет предназначен для разбора XML файлов:
+  -- Процедура загрузки XML из внешнего файла - GetClobOutBfile (Имя файла, Имя директории, Clob возвращаемый процедурой)
+  -- Процедура разбора CLOB XML файла -  ParsingXml(Clob файл для разбора)
+  -- Результирующий массив значений vXMLsPars
   */
   type tabAttr is table of varchar2(1000) index by varchar2(1000);
   type tabTagValue is table of varchar2(1000) index by varchar2(1000);
   
-  type recXml is record (NameTag varchar2(1000)          -- РќР°РёРјРµРЅРѕРІР°РЅРёРµ СЌР»РµРјРµРЅС‚Р°
-                        , NameParentTag varchar2(1000)   -- РќР°РёРјРµРЅРѕРІР°РЅРёРµ СЂРѕРґРёС‚РµР»СЊСЃРєРѕРіРѕ СЌР»РµРјРµРЅС‚Р°
-                        , Attributes tabAttr             -- РњР°СЃСЃРёРІ Р°С‚СЂРёР±СѓС‚РѕРІ СЌР»РµРјРµРЅС‚Р°
-                        , ValuesTag tabTagValue);        -- РњР°СЃСЃРёРІ Р·РЅР°С‡РµРЅРёР№ СЌР»РµРјРµРЅС‚Р°
+  type recXml is record (NameTag varchar2(1000)          -- Наименование элемента
+                        , NameParentTag varchar2(1000)   -- Наименование родительского элемента
+                        , Attributes tabAttr             -- Массив атрибутов элемента
+                        , ValuesTag tabTagValue);        -- Массив значений элемента
   type tabXml is table of recXml index by pls_integer;
   --------------------------------------------------------
   procedure GetClobOutBfile (pBfileName varchar2
@@ -56,6 +56,9 @@ create or replace package body ParsingXML_postPackage is
                                 warning      => vWarning);
       dbms_lob.close(pClobOut);
       dbms_lob.close(vInBfile);
+    exception
+      null;
+      --todo обработка ошибок открытие файлов с сервера
     end GetClobOutBfile;
   ------------------------------------------------------------------------
   procedure ParsingNode(pNodeList dbms_xmldom.DOMNodeList)
@@ -73,7 +76,7 @@ create or replace package body ParsingXML_postPackage is
           vNode := dbms_xmldom.item(pNodeList, i);
           vXMLsPars(vXMLsPars.count+1).NameTag := dbms_xmldom.getNodeName(vNode);
           vXMLsPars(vXMLsPars.count).NameParentTag := dbms_xmldom.getNodeName(dbms_xmldom.getParentNode(vNode));
-          -- Р•СЃР»Рё РµСЃС‚СЊ Р°С‚СЂРёР±СѓС‚С‹ РїР°СЂСЃРёРј
+          -- Если есть атрибуты парсим
           if dbms_xmldom.hasAttributes(vNode) then
             vAttrs := dbms_xmldom.getAttributes(vNode);
             for j in 0 .. dbms_xmldom.getLength(vAttrs) - 1 loop
@@ -81,7 +84,7 @@ create or replace package body ParsingXML_postPackage is
               vXMLsPars(vXMLsPars.count).Attributes(dbms_xmldom.getNodeName(vAtr)) := dbms_xmldom.getNodeValue(vAtr);
             end loop;
           end if;
-          -- Р•СЃР»Рё РµСЃС‚СЊ РґРѕС‡РµСЂРЅРёРµ СѓР·Р»С‹ Рё СЌС‚Рѕ РЅРµ РѕР±СЉРµРєС‚ РёРґРµРј РІ РЅРёС…, РёРЅР°С‡Рµ Р±РµСЂРµРј Р·РЅР°С‡РµРЅРёСЏ СѓР·Р»РѕРІ
+          -- Если есть дочерние узлы и это не объект идем в них, иначе берем значения узлов
           vCheckChildNodes := dbms_xmldom.getChildNodes(vNode);
           if dbms_xmldom.getNodeType(dbms_xmldom.item(vCheckChildNodes,0)) <> 3 then 
             ParsingNode(vCheckChildNodes);
@@ -102,6 +105,8 @@ create or replace package body ParsingXML_postPackage is
  
      vNodeList             dbms_xmldom.DOMNodeList;
      vNode                 dbms_xmldom.DOMNode;
+     vAttributeList        dbms_xmldom.DOMNamedNodeMap;
+     vAttribute            dbms_xmldom.DOMNode;    
     begin
       vParser := dbms_xmlparser.newParser;
       dbms_xmlparser.parseClob(vParser, pClob);
@@ -110,10 +115,15 @@ create or replace package body ParsingXML_postPackage is
       vRootElem := dbms_xmldom.getDocumentElement(vDoc);
       
       vXMLsPars(vXMLsPars.count+1).NameTag := dbms_xmldom.getTagName(vRootElem);
-      -- todo СѓРЅРёРІРµСЂСЃР°Р»СЊРЅС‹Р№ РјРµС…Р°РЅРёР·Рј СЃРѕС…СЂР°РЅРµРЅРёСЏ Р°С‚СЂРёР±СѓС‚РѕРІ СЂРѕРґРёС‚РµР»СЊСЃРєРѕРіРѕ С‚РµРіР° (С‡РµСЂРµР· СѓР·Р»С‹)
-      vXMLsPars(vXMLsPars.count).Attributes('PurchaseOrderNumber') := dbms_xmldom.getAttribute(vRootElem, 'PurchaseOrderNumber');
-      vXMLsPars(vXMLsPars.count).Attributes('OrderDate') := dbms_xmldom.getAttribute(vRootElem, 'OrderDate');
+      vNode := dbms_xmldom.makeNode(vRootElem);
+      vAttributeList := dbms_xmldom.getAttributes(vNode);
       
+      for i in 0 .. dbms_xmldom.getLength(vAttributeList) - 1 loop
+        vAttribute := dbms_xmldom.item(vAttributeList, i);
+        vXMLsPars(vXMLsPars.count).Attributes(dbms_xmldom.getNodeName(vAttribute)) := dbms_xmldom.getNodeValue(vAttribute);
+        vXMLsPars(vXMLsPars.count).Attributes(dbms_xmldom.getNodeName(vAttribute)) := dbms_xmldom.getNodeValue(vAttribute);
+      end loop;
+
       vNode := dbms_xmldom.makeNode(vRootElem);
       vNodeList := dbms_xmldom.getChildNodes(vNode);
       ParsingNode(vNodeList);
