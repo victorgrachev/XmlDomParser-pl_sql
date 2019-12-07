@@ -39,13 +39,22 @@ create or replace package body ParsingXML_postPackage is
      vSource_offset integer := 1;
      vlang_context integer := 1;
      vWarning integer;
+     
+     vExceptionFailOpen exception;
+     pragma exception_init(vExceptionFailOpen, -22288);
+     
+     vExceptionDirectory exception;
+     pragma exception_init(vExceptionDirectory, -22285);
+     
+     vExceptionFail exception;
+     pragma exception_init(vExceptionFail, -20000);
     begin
       dbms_lob.createtemporary(lob_loc => pClobOut,
                                cache   => True,
                                dur     => DBMS_LOB.session);
       vInBfile := BFILENAME(pNameDirect, pBfileName);
+       dbms_lob.open(vInBfile);
       dbms_lob.open(pClobOut, DBMS_LOB.LOB_READWRITE);
-      dbms_lob.open(vInBfile);
       dbms_lob.loadclobfromfile(dest_lob     => pClobOut,
                                 src_bfile    => vInBfile,
                                 amount       => DBMS_LOB.LOBMAXSIZE,
@@ -57,8 +66,10 @@ create or replace package body ParsingXML_postPackage is
       dbms_lob.close(pClobOut);
       dbms_lob.close(vInBfile);
     exception
-      null;
-      --todo обработка ошибок открытие файлов с сервера
+      when vExceptionFailOpen then
+       raise_application_error(-20000,'Файл не открыт, возможно неверно указано наименование файла');
+      when vExceptionDirectory then
+       raise_application_error(-20000,'Файл не открыт, неверно указано наименование директории файла');
     end GetClobOutBfile;
   ------------------------------------------------------------------------
   procedure ParsingNode(pNodeList dbms_xmldom.DOMNodeList)
@@ -67,7 +78,6 @@ create or replace package body ParsingXML_postPackage is
        vCheckChildNodes dbms_xmldom.DOMNodeList;
        vAttrs dbms_xmldom.DOMNamedNodeMap;
        vAtr dbms_xmldom.DOMNode;
-       
        vCheckNodeList number;
     begin
       vCheckNodeList := dbms_xmldom.getLength(pNodeList);
@@ -86,7 +96,7 @@ create or replace package body ParsingXML_postPackage is
           end if;
           -- Если есть дочерние узлы и это не объект идем в них, иначе берем значения узлов
           vCheckChildNodes := dbms_xmldom.getChildNodes(vNode);
-          if dbms_xmldom.getNodeType(dbms_xmldom.item(vCheckChildNodes,0)) <> 3 then 
+          if dbms_xmldom.getNodeType(dbms_xmldom.item(vCheckChildNodes,0)) <> dbms_xmldom.TEXT_NODE then 
             ParsingNode(vCheckChildNodes);
           else
            vXMLsPars(vXMLsPars.count).ValuesTag(dbms_xmldom.getNodeName(vNode)) := dbms_xmldom.getNodeValue(dbms_xmldom.getFirstChild(vNode));
